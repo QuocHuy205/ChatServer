@@ -1,3 +1,6 @@
+// FILE: vku/chatapp/server/database/dao/MessageDAO.java
+// ✅ FIX: SQL syntax error trong updateMessageStatus
+
 package vku.chatapp.server.database.dao;
 
 import vku.chatapp.common.model.Message;
@@ -51,6 +54,10 @@ public class MessageDAO {
                     message.setId(keys.getLong(1));
                 }
             }
+
+            System.out.println("✅ Message saved to DB: ID=" + message.getId() +
+                    ", Type=" + message.getType() +
+                    ", Status=" + message.getStatus());
         }
         return message;
     }
@@ -81,14 +88,28 @@ public class MessageDAO {
                 }
             }
         }
+
+        System.out.println("✅ Loaded " + messages.size() + " messages from DB for conversation: " +
+                user1Id + " <-> " + user2Id);
+
         return messages;
     }
 
+    // ✅ FIX: SQL syntax error - thiếu SET clause
     public boolean updateMessageStatus(Long messageId, MessageStatus status) throws SQLException {
-        String sql = "UPDATE messages SET status = ?, " +
-                (status == MessageStatus.DELIVERED ? "delivered_at = CURRENT_TIMESTAMP" :
-                        status == MessageStatus.READ ? "read_at = CURRENT_TIMESTAMP" : "") +
-                " WHERE id = ?";
+        String sql;
+
+        // Build SQL based on status
+        switch (status) {
+            case DELIVERED:
+                sql = "UPDATE messages SET status = ?, delivered_at = CURRENT_TIMESTAMP WHERE id = ?";
+                break;
+            case READ:
+                sql = "UPDATE messages SET status = ?, read_at = CURRENT_TIMESTAMP WHERE id = ?";
+                break;
+            default:
+                sql = "UPDATE messages SET status = ? WHERE id = ?";
+        }
 
         try (Connection conn = pool.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -96,7 +117,18 @@ public class MessageDAO {
             stmt.setString(1, status.name());
             stmt.setLong(2, messageId);
 
-            return stmt.executeUpdate() > 0;
+            int updated = stmt.executeUpdate();
+
+            if (updated > 0) {
+                System.out.println("✅ Message status updated: ID=" + messageId + ", Status=" + status);
+                return true;
+            } else {
+                System.err.println("⚠️ No message found with ID: " + messageId);
+                return false;
+            }
+        } catch (SQLException e) {
+            System.err.println("❌ Error updating message status: " + e.getMessage());
+            throw e;
         }
     }
 

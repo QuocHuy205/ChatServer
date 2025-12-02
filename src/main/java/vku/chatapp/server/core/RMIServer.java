@@ -1,3 +1,6 @@
+// FILE: vku/chatapp/server/core/RMIServer.java
+// ✅ FIX: Thêm MessageService vào RMI registry
+
 package vku.chatapp.server.core;
 
 import vku.chatapp.common.constants.AppConstants;
@@ -26,7 +29,11 @@ public class RMIServer {
         PeerDiscoveryServiceImpl peerService = new PeerDiscoveryServiceImpl();
         registry.rebind(AppConstants.RMI_PEER_DISCOVERY_SERVICE, peerService);
 
-        System.out.println("RMI services bound successfully");
+        // ✅ NEW: Register MessageService
+        MessageServiceImpl messageService = new MessageServiceImpl();
+        registry.rebind("MessageService", messageService);
+
+        System.out.println("✅ RMI services bound successfully");
     }
 
     public void stop() {
@@ -37,6 +44,7 @@ public class RMIServer {
                 registry.unbind(AppConstants.RMI_USER_SERVICE);
                 registry.unbind(AppConstants.RMI_FRIEND_SERVICE);
                 registry.unbind(AppConstants.RMI_PEER_DISCOVERY_SERVICE);
+                registry.unbind("MessageService"); // ✅ NEW
             }
         } catch (Exception e) {
             System.err.println("Error stopping RMI server: " + e.getMessage());
