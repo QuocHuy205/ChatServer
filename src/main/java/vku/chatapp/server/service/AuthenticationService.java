@@ -24,7 +24,8 @@ public class AuthenticationService {
 
     public AuthResponse login(LoginRequest request) {
         try {
-            User user = userDAO.getUserByUsername(request.getUsername());
+            User user = userDAO.getUserByEmail(request.getEmail());
+            boolean verifyByEmail = userDAO.getverifyEmail(request.getEmail());
 
             if (user == null) {
                 return new AuthResponse(false, "Invalid username or password");
@@ -32,6 +33,10 @@ public class AuthenticationService {
 
             if (!EncryptionUtil.verifyPassword(request.getPassword(), user.getPasswordHash())) {
                 return new AuthResponse(false, "Invalid username or password");
+            }
+
+            if (!verifyByEmail) {
+                return new AuthResponse(false, "Email not verified. Please verify your email before logging in." + verifyByEmail);
             }
 
             // Removed email verification check - allow login without verification
@@ -51,39 +56,84 @@ public class AuthenticationService {
         }
     }
 
+
     public AuthResponse register(RegisterRequest request) {
+        System.out.println("\n========== BẮT ĐẦU ĐĂNG KÝ ==========");
+        String username = request.getUsername();
+        String email = request.getEmail();
+        String password = request.getPassword();
+        String displayName = request.getDisplayName();
+
+        System.out.println("Username: " + username);
+        System.out.println("Email: " + email);
+
         try {
-            // Check if username exists
-            if (userDAO.getUserByUsername(request.getUsername()) != null) {
-                return new AuthResponse(false, "Username already exists");
+            // 1. VALIDATE INPUT (Kiểm tra dữ liệu đầu vào chặt chẽ)
+            if (username == null || username.trim().isEmpty()) {
+                return new AuthResponse(false, "Tên đăng nhập không được để trống");
+            }
+            // Regex kiểm tra email chuẩn
+            if (email == null || !email.matches("^[A-Za-z0-9+_.-]+@(.+)$")) {
+                return new AuthResponse(false, "Email không hợp lệ");
+            }
+            if (password == null || password.length() < 6) {
+                return new AuthResponse(false, "Mật khẩu phải có ít nhất 6 ký tự");
             }
 
-            // Check if email exists
-            if (userDAO.getUserByEmail(request.getEmail()) != null) {
-                return new AuthResponse(false, "Email already registered");
+            // 2. CHECK EXISTING DATA (Kiểm tra tồn tại trong DB)
+//            if (userDAO.getUserByUsername(username) != null) {
+//                return new AuthResponse(false, "Tên đăng nhập đã tồn tại");
+//            }
+            if (userDAO.getUserByEmail(email) != null) {
+                return new AuthResponse(false, "Email đã được sử dụng bởi tài khoản khác");
             }
 
-            // Create new user - auto verify email
-            User user = new User();
-            user.setUsername(request.getUsername());
-            user.setEmail(request.getEmail());
-            user.setPasswordHash(EncryptionUtil.hashPassword(request.getPassword()));
-            user.setDisplayName(request.getDisplayName());
-            user.setEmailVerified(true); // Auto verify for easier testing
+            // 3. CREATE USER (Tạo đối tượng User)
+            String passwordHash = EncryptionUtil.hashPassword(password); // Dùng EncryptionUtil của bạn
 
-            user = userDAO.createUser(user);
+            User newUser = new User();
+            newUser.setUsername(username);
+            newUser.setEmail(email);
+            newUser.setPasswordHash(passwordHash);
+            newUser.setDisplayName(displayName != null ? displayName : username);
+            newUser.setEmailVerified(false); // Quan trọng: Mặc định là chưa xác thực
 
-            // No need to send verification email anymore
-            // emailService.sendVerificationEmail(request.getEmail(), otp);
+            // Lưu User vào DB
+            // Lưu ý: Nếu userDAO của bạn tự quản lý connection thì dòng này sẽ commit luôn
+            newUser = userDAO.createUser(newUser);
 
-            AuthResponse response = new AuthResponse(true, "Registration successful. You can now login.");
-            response.setUser(user);
+            if (newUser == null || newUser.getId() <= 0) {
+                return new AuthResponse(false, "Lỗi hệ thống: Không thể tạo tài khoản vào Database");
+            }
+            String otpCode = otpDAO.generateOtp(email, "EMAIL_VERIFICATION");
 
+            if (otpCode == null) {
+                // Nếu lỗi tạo OTP, có thể cần xóa user vừa tạo để tránh rác (tùy chọn)
+                // userDAO.deleteUser(newUser.getId());
+                return new AuthResponse(false, "Lỗi hệ thống: Không thể tạo mã OTP");
+            }
+
+            // 5. SEND EMAIL (Gửi mail)
+            try {
+                if (!emailService.sendVerificationEmail(email, otpCode, username))
+                    throw new Exception("Gửi email thất bại");
+
+                System.out.println("Đã gửi email OTP đến: " + email);
+            } catch (Exception e) {
+                e.printStackTrace();
+                // Logic Rollback thủ công: Nếu gửi mail lỗi thì nên xóa User đi để họ đăng ký lại được
+                // userDAO.deleteUser(newUser.getId());
+                return new AuthResponse(false, "Không thể gửi email xác thực. Vui lòng kiểm tra lại địa chỉ email.");
+            }
+
+            // 6. RETURN SUCCESS
+            AuthResponse response = new AuthResponse(true, "Đăng ký thành công. Vui lòng kiểm tra email để nhập mã OTP.");
+            response.setUser(newUser);
             return response;
 
         } catch (Exception e) {
             e.printStackTrace();
-            return new AuthResponse(false, "Registration failed: " + e.getMessage());
+            return new AuthResponse(false, "Lỗi xử lý đăng ký: " + e.getMessage());
         }
     }
 

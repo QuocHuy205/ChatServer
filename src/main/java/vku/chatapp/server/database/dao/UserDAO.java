@@ -12,7 +12,7 @@ public class UserDAO {
     private final ConnectionPool pool = ConnectionPool.getInstance();
 
     public User createUser(User user) throws SQLException {
-        String sql = "INSERT INTO users (username, email, password_hash, display_name, email_verified) VALUES (?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO users (username, email, password_hash, display_name, email_verified) VALUES (?, ?, ?, ?, 0)";
 
         try (Connection conn = pool.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
@@ -21,7 +21,7 @@ public class UserDAO {
             stmt.setString(2, user.getEmail());
             stmt.setString(3, user.getPasswordHash());
             stmt.setString(4, user.getDisplayName());
-            stmt.setBoolean(5, user.isEmailVerified());
+
 
             stmt.executeUpdate();
 
@@ -141,6 +141,22 @@ public class UserDAO {
 
             return stmt.executeUpdate() > 0;
         }
+    }
+
+    public boolean getverifyEmail(String email) throws SQLException {
+        String sql = "SELECT email_verified FROM users WHERE email = ?";
+
+        try (Connection conn = pool.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, email);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getBoolean("email_verified");
+                }
+            }
+        }
+        return false;
     }
 
     public boolean verifyEmail(Long userId) throws SQLException {
