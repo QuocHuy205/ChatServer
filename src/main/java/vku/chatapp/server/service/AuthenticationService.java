@@ -6,8 +6,12 @@ import vku.chatapp.common.util.EncryptionUtil;
 import vku.chatapp.server.database.dao.UserDAO;
 import vku.chatapp.server.database.dao.OtpDAO;
 
+import java.sql.SQLException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+
+import static vku.chatapp.common.enums.UserStatus.OFFLINE;
+import static vku.chatapp.common.enums.UserStatus.ONLINE;
 
 public class AuthenticationService {
     private final UserDAO userDAO;
@@ -39,6 +43,8 @@ public class AuthenticationService {
                 return new AuthResponse(false, "Email not verified. Please verify your email before logging in." + verifyByEmail);
             }
 
+            // Update user status to ONLINE
+            userDAO.updateStatus(user.getId(), ONLINE);
             // Removed email verification check - allow login without verification
 
             String sessionToken = EncryptionUtil.generateToken();
@@ -47,6 +53,7 @@ public class AuthenticationService {
             AuthResponse response = new AuthResponse(true, "Login successful");
             response.setUser(user);
             response.setSessionToken(sessionToken);
+
 
             return response;
 
@@ -138,6 +145,15 @@ public class AuthenticationService {
     }
 
     public boolean logout(String sessionToken) {
+        Long userId = activeSessions.get(sessionToken);
+        if (userId != null) {
+            // [THÊM MỚI] CẬP NHẬT TRẠNG THÁI OFFLINE
+            try {
+                userDAO.updateStatus(userId, OFFLINE);
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
+        }
         return activeSessions.remove(sessionToken) != null;
     }
 

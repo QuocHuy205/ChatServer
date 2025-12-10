@@ -13,7 +13,7 @@ public class FriendServiceImpl extends UnicastRemoteObject implements IFriendSer
     private final FriendManagementService friendService;
 
     public FriendServiceImpl() throws RemoteException {
-        super();
+        super();    
         this.friendService = new FriendManagementService();
     }
 
@@ -45,6 +45,15 @@ public class FriendServiceImpl extends UnicastRemoteObject implements IFriendSer
     }
 
     @Override
+    public boolean cancelFriendRequest(Long requestId, Long userId) throws RemoteException {
+        try {
+            return friendService.cancelFriendRequest(requestId, userId);
+        } catch (Exception e) {
+            throw new RemoteException("Failed to cancel friend request", e);
+        }
+    }
+
+    @Override
     public boolean removeFriend(Long userId, Long friendId) throws RemoteException {
         try {
             return friendService.removeFriend(userId, friendId);
@@ -68,6 +77,24 @@ public class FriendServiceImpl extends UnicastRemoteObject implements IFriendSer
             return friendService.getPendingRequests(userId);
         } catch (Exception e) {
             throw new RemoteException("Failed to get pending requests", e);
+        }
+    }
+
+    @Override
+    public List<Friend> getSentRequests(Long userId) throws RemoteException {
+        try {
+            return friendService.getSentRequests(userId);
+        } catch (Exception e) {
+            throw new RemoteException("Failed to get sent requests", e);
+        }
+    }
+
+    @Override
+    public UserDTO searchUserByUsername(String username) throws RemoteException {
+        try {
+            return friendService.searchUserByUsername(username);
+        } catch (Exception e) {
+            throw new RemoteException("Failed to search user", e);
         }
     }
 }

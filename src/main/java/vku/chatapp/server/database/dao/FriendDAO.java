@@ -14,7 +14,7 @@ public class FriendDAO {
     public Friend createFriendRequest(Long userId, Long friendId) throws SQLException {
         // Check if friendship already exists (in either direction)
         String checkSql = """
-            SELECT id, status FROM friends 
+            SELECT id, user_id, friend_id, status FROM friends 
             WHERE (user_id = ? AND friend_id = ?) 
                OR (user_id = ? AND friend_id = ?)
         """;
@@ -32,30 +32,30 @@ public class FriendDAO {
                     // Friendship exists, return existing
                     Friend existing = new Friend();
                     existing.setId(rs.getLong("id"));
-                    existing.setUserId(userId);
-                    existing.setFriendId(friendId);
+                    existing.setUserId(rs.getLong("user_id"));
+                    existing.setFriendId(rs.getLong("friend_id"));
                     existing.setStatus(FriendRequestStatus.valueOf(rs.getString("status")));
                     return existing;
                 }
             }
         }
 
-        // Create new friend request
-        String sql = "INSERT INTO friends (user_id, friend_id, status) VALUES (?, ?, ?)";
+        // Create new friend request with PENDING status
+        String sql = "INSERT INTO friends (user_id, friend_id, status, requested_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)";
 
         try (Connection conn = pool.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
 
             stmt.setLong(1, userId);
             stmt.setLong(2, friendId);
-            stmt.setString(3, FriendRequestStatus.ACCEPTED.name()); // Auto accept for simplicity
+            stmt.setString(3, FriendRequestStatus.PENDING.name());
 
             stmt.executeUpdate();
 
             Friend friend = new Friend();
             friend.setUserId(userId);
             friend.setFriendId(friendId);
-            friend.setStatus(FriendRequestStatus.ACCEPTED);
+            friend.setStatus(FriendRequestStatus.PENDING);
 
             try (ResultSet keys = stmt.getGeneratedKeys()) {
                 if (keys.next()) {
@@ -63,29 +63,66 @@ public class FriendDAO {
                 }
             }
 
-            // Create reverse friendship for easy querying
-            String reverseSql = "INSERT INTO friends (user_id, friend_id, status) VALUES (?, ?, ?)";
-            try (PreparedStatement reverseStmt = conn.prepareStatement(reverseSql)) {
-                reverseStmt.setLong(1, friendId);
-                reverseStmt.setLong(2, userId);
-                reverseStmt.setString(3, FriendRequestStatus.ACCEPTED.name());
-                reverseStmt.executeUpdate();
-            }
-
             return friend;
         }
     }
 
     public boolean acceptFriendRequest(Long requestId) throws SQLException {
-        String sql = "UPDATE friends SET status = ?, accepted_at = CURRENT_TIMESTAMP WHERE id = ?";
+        Connection conn = null;
+        try {
+            conn = pool.getConnection();
+            conn.setAutoCommit(false);
 
-        try (Connection conn = pool.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            // Update the request to ACCEPTED
+            String updateSql = "UPDATE friends SET status = ?, accepted_at = CURRENT_TIMESTAMP WHERE id = ?";
+            try (PreparedStatement stmt = conn.prepareStatement(updateSql)) {
+                stmt.setString(1, FriendRequestStatus.ACCEPTED.name());
+                stmt.setLong(2, requestId);
+                stmt.executeUpdate();
+            }
 
-            stmt.setString(1, FriendRequestStatus.ACCEPTED.name());
-            stmt.setLong(2, requestId);
+            // Get the friend request details
+            String getSql = "SELECT user_id, friend_id FROM friends WHERE id = ?";
+            Long userId, friendId;
+            try (PreparedStatement stmt = conn.prepareStatement(getSql)) {
+                stmt.setLong(1, requestId);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    if (!rs.next()) {
+                        conn.rollback();
+                        return false;
+                    }
+                    userId = rs.getLong("user_id");
+                    friendId = rs.getLong("friend_id");
+                }
+            }
 
-            return stmt.executeUpdate() > 0;
+            // Create reverse friendship for easy querying
+            String reverseSql = """
+                INSERT INTO friends (user_id, friend_id, status, accepted_at) 
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON DUPLICATE KEY UPDATE status = ?, accepted_at = CURRENT_TIMESTAMP
+            """;
+            try (PreparedStatement stmt = conn.prepareStatement(reverseSql)) {
+                stmt.setLong(1, friendId);
+                stmt.setLong(2, userId);
+                stmt.setString(3, FriendRequestStatus.ACCEPTED.name());
+                stmt.setString(4, FriendRequestStatus.ACCEPTED.name());
+                stmt.executeUpdate();
+            }
+
+            conn.commit();
+            return true;
+
+        } catch (SQLException e) {
+            if (conn != null) {
+                conn.rollback();
+            }
+            throw e;
+        } finally {
+            if (conn != null) {
+                conn.setAutoCommit(true);
+                conn.close();
+            }
         }
     }
 
@@ -140,7 +177,7 @@ public class FriendDAO {
     }
 
     public List<Friend> getPendingRequests(Long userId) throws SQLException {
-        String sql = "SELECT * FROM friends WHERE friend_id = ? AND status = 'PENDING'";
+        String sql = "SELECT * FROM friends WHERE friend_id = ? AND status = 'PENDING' ORDER BY requested_at DESC";
         List<Friend> requests = new ArrayList<>();
 
         try (Connection conn = pool.getConnection();
@@ -155,6 +192,37 @@ public class FriendDAO {
             }
         }
         return requests;
+    }
+
+    public List<Friend> getSentRequests(Long userId) throws SQLException {
+        String sql = "SELECT * FROM friends WHERE user_id = ? AND status = 'PENDING' ORDER BY requested_at DESC";
+        List<Friend> requests = new ArrayList<>();
+
+        try (Connection conn = pool.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setLong(1, userId);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    requests.add(mapResultSetToFriend(rs));
+                }
+            }
+        }
+        return requests;
+    }
+
+    public boolean cancelFriendRequest(Long requestId, Long userId) throws SQLException {
+        String sql = "DELETE FROM friends WHERE id = ? AND user_id = ? AND status = 'PENDING'";
+
+        try (Connection conn = pool.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setLong(1, requestId);
+            stmt.setLong(2, userId);
+
+            return stmt.executeUpdate() > 0;
+        }
     }
 
     private Friend mapResultSetToFriend(ResultSet rs) throws SQLException {

@@ -20,6 +20,9 @@ public class FriendManagementService {
 
     public boolean sendFriendRequest(Long userId, Long friendId) {
         try {
+            if (userId.equals(friendId)) {
+                return false; // Can't add yourself
+            }
             friendDAO.createFriendRequest(userId, friendId);
             return true;
         } catch (Exception e) {
@@ -40,6 +43,15 @@ public class FriendManagementService {
     public boolean rejectFriendRequest(Long requestId) {
         try {
             return friendDAO.rejectFriendRequest(requestId);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public boolean cancelFriendRequest(Long requestId, Long userId) {
+        try {
+            return friendDAO.cancelFriendRequest(requestId, userId);
         } catch (Exception e) {
             e.printStackTrace();
             return false;
@@ -80,6 +92,25 @@ public class FriendManagementService {
         } catch (Exception e) {
             e.printStackTrace();
             return List.of();
+        }
+    }
+
+    public List<Friend> getSentRequests(Long userId) {
+        try {
+            return friendDAO.getSentRequests(userId);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return List.of();
+        }
+    }
+
+    public UserDTO searchUserByUsername(String username) {
+        try {
+            User user = userDAO.getUserByUsername(username);
+            return user != null ? convertToDTO(user) : null;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
         }
     }
 
