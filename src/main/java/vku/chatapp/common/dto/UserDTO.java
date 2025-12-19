@@ -41,4 +41,18 @@ public class UserDTO implements Serializable {
 
     public int getP2pPort() { return p2pPort; }
     public void setP2pPort(int p2pPort) { this.p2pPort = p2pPort; }
+
+    @Override
+    public String toString() {
+        return "UserDTO{" +
+                "id=" + id +
+                ", username='" + username + '\'' +
+                ", displayName='" + displayName + '\'' +
+                ", avatarUrl='" + avatarUrl + '\'' +
+                ", bio='" + bio + '\'' +
+                ", status=" + status +
+                ", p2pAddress='" + p2pAddress + '\'' +
+                ", p2pPort=" + p2pPort +
+                '}';
+    }
 }

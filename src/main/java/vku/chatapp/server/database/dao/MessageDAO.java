@@ -11,36 +11,50 @@ import vku.chatapp.server.database.ConnectionPool;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class MessageDAO {
     private final ConnectionPool pool = ConnectionPool.getInstance();
+    private static final long DUPLICATE_EXPIRE_MS = 3000; // 3 giây
+    private static final ConcurrentHashMap<String, Long> MESSAGE_CACHE = new ConcurrentHashMap<>();
 
     public Message saveMessage(Message message) throws SQLException {
+
+        // 🔒 CHỐNG GỬI TRÙNG TẠI DAO (KHÔNG ĐỤNG MYSQL)
+        if (isDuplicateMessage(message)) {
+            System.out.println("⚠️ Duplicate message blocked by DAO");
+            return message; // Không INSERT
+        }
+
         String sql = """
-            INSERT INTO messages (sender_id, receiver_id, group_id, content, type, status, 
-                                 file_url, file_name, file_size)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """;
+        INSERT INTO messages (sender_id, receiver_id, group_id, content, type, status,
+                             file_url, file_name, file_size)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """;
 
         try (Connection conn = pool.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
 
             stmt.setLong(1, message.getSenderId());
+
             if (message.getReceiverId() != null) {
                 stmt.setLong(2, message.getReceiverId());
             } else {
                 stmt.setNull(2, Types.BIGINT);
             }
+
             if (message.getGroupId() != null) {
                 stmt.setLong(3, message.getGroupId());
             } else {
                 stmt.setNull(3, Types.BIGINT);
             }
+
             stmt.setString(4, message.getContent());
             stmt.setString(5, message.getType().name());
             stmt.setString(6, message.getStatus().name());
             stmt.setString(7, message.getFileUrl());
             stmt.setString(8, message.getFileName());
+
             if (message.getFileSize() != null) {
                 stmt.setLong(9, message.getFileSize());
             } else {
@@ -55,12 +69,12 @@ public class MessageDAO {
                 }
             }
 
-            System.out.println("✅ Message saved to DB: ID=" + message.getId() +
-                    ", Type=" + message.getType() +
-                    ", Status=" + message.getStatus());
+            System.out.println("✅ Message saved to DB: ID=" + message.getId());
         }
+
         return message;
     }
+
 
     public List<Message> getConversationHistory(Long user1Id, Long user2Id, int limit) throws SQLException {
         String sql = """
@@ -175,4 +189,32 @@ public class MessageDAO {
 
         return message;
     }
+
+    /**
+     * Kiểm tra message có bị gửi trùng trong thời gian ngắn hay không
+     * @return true nếu là message trùng cần chặn
+     */
+    private boolean isDuplicateMessage(Message message) {
+
+        String fingerprint =
+                message.getSenderId() + ":" +
+                        message.getReceiverId() + ":" +
+                        message.getType() + ":" +
+                        (message.getContent() != null
+                                ? message.getContent().hashCode()
+                                : 0);
+
+        long now = System.currentTimeMillis();
+        Long lastTime = MESSAGE_CACHE.get(fingerprint);
+
+        // Nếu tồn tại và gửi lại quá nhanh → duplicate
+        if (lastTime != null && (now - lastTime) < DUPLICATE_EXPIRE_MS) {
+            return true;
+        }
+
+        // Lưu lại dấu vết message này
+        MESSAGE_CACHE.put(fingerprint, now);
+        return false;
+    }
+
 }
