@@ -155,10 +155,17 @@ public class FriendDAO {
     }
 
     public List<Long> getFriendIds(Long userId) throws SQLException {
+        // ✅ Lấy friends từ CẢ 2 CHIỀU: user_id hoặc friend_id
         String sql = """
-            SELECT friend_id FROM friends 
-            WHERE user_id = ? AND status = 'ACCEPTED'
-        """;
+        SELECT DISTINCT
+            CASE 
+                WHEN user_id = ? THEN friend_id 
+                ELSE user_id 
+            END AS friend_id
+        FROM friends 
+        WHERE (user_id = ? OR friend_id = ?) 
+          AND status = 'ACCEPTED'
+    """;
 
         List<Long> friendIds = new ArrayList<>();
 
@@ -166,6 +173,8 @@ public class FriendDAO {
              PreparedStatement stmt = conn.prepareStatement(sql)) {
 
             stmt.setLong(1, userId);
+            stmt.setLong(2, userId);
+            stmt.setLong(3, userId);
 
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
@@ -173,9 +182,10 @@ public class FriendDAO {
                 }
             }
         }
+
+        System.out.println("📋 Found " + friendIds.size() + " friends for user " + userId);
         return friendIds;
     }
-
     public List<Friend> getPendingRequests(Long userId) throws SQLException {
         String sql = "SELECT * FROM friends WHERE friend_id = ? AND status = 'PENDING' ORDER BY requested_at DESC";
         List<Friend> requests = new ArrayList<>();
