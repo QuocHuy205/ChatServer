@@ -6,5 +6,5 @@ module vku.chatapp {
     requires com.zaxxer.hikari;
     requires java.sql;
     requires java.mail;
-
+    requires cloudinary.core;
 }

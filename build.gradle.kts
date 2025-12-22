@@ -55,6 +55,9 @@ dependencies {
     implementation("org.slf4j:slf4j-api:2.0.7")
     implementation("ch.qos.logback:logback-classic:1.4.11")
 
+    // Cloudinary for image upload ✨ NEW
+    implementation("com.cloudinary:cloudinary-http44:1.36.0")
+
     // Testing
     testImplementation("org.junit.jupiter:junit-jupiter:5.9.3")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
